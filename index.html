@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered Dam Failure Early Warning System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .header h1 {
+            color: #2563eb;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: auto auto auto;
+            gap: 1rem;
+            padding: 1rem;
+            min-height: calc(100vh - 80px);
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+        }
+
+        .card h2 {
+            color: #1e40af;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .alert-banner {
+            grid-column: 1 / -1;
+            background: linear-gradient(45deg, #dc2626, #ef4444);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 15px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+            animation: alertPulse 2s infinite;
+        }
+
+        @keyframes alertPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.9; transform: scale(1.02); }
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+        }
+
+        .status-item {
+            text-align: center;
+            padding: 1rem;
+            border-radius: 10px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        .status-number {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #4f46e5;
+        }
+
+        .status-label {
+            font-size: 0.9rem;
+            color: #6b7280;
+            margin-top: 0.5rem;
+        }
+
+        .location-btn, .action-btn {
+            background: linear-gradient(45deg, #059669, #10b981);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1rem;
+            width: 100%;
+            margin: 0.5rem 0;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .location-btn:hover, .action-btn:hover {
+            background: linear-gradient(45deg, #047857, #059669);
+            transform: translateY(-2px);
+        }
+
+        .simulator-btn {
+            background: linear-gradient(45deg, #3b82f6, #1d4ed8);
+        }
+
+        .simulator-btn:hover {
+            background: linear-gradient(45deg, #1d4ed8, #1e40af);
+        }
+
+        .simulator-mode {
+            background: #eff6ff;
+            border: 2px solid #3b82f6;
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            display: none;
+        }
+
+        .simulator-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin: 0.5rem 0;
+        }
+
+        .simulator-controls button {
+            flex: 1;
+            padding: 0.5rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .sos-button {
+            background: linear-gradient(45deg, #dc2626, #ef4444);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 15px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin: 0.5rem 0;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .sos-button:hover {
+            background: linear-gradient(45deg, #b91c1c, #dc2626);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(220, 38, 38, 0.3);
+        }
+
+        .missing-person-btn {
+            background: linear-gradient(45deg, #d97706, #f59e0b);
+        }
+
+        .missing-person-btn:hover {
+            background: linear-gradient(45deg, #b45309, #d97706);
+        }
+
+        .flood-map-container {
+            grid-column: 2 / -1;
+            grid-row: 2 / 4;
+            height: 100%;
+            min-height: 500px;
+        }
+
+        #floodMap {
+            width: 100%;
+            height: 100%;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+
+        .missing-person-form {
+            display: none;
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            padding: 1.5rem;
+            border-radius: 15px;
+            margin: 1rem 0;
+        }
+
+        .form-group {
+            margin: 1rem 0;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .submit-btn {
+            background: linear-gradient(45deg, #059669, #10b981);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .submit-btn:hover {
+            background: linear-gradient(45deg, #047857, #059669);
+        }
+
+        .alert-item {
+            background: #fef2f2;
+            border-left: 4px solid #dc2626;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            border-radius: 8px;
+        }
+
+        .alert-time {
+            font-size: 0.9rem;
+            color: #6b7280;
+        }
+
+        .emergency-contacts {
+            background: #f0f9ff;
+            border: 2px solid #3b82f6;
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+        }
+
+        .contact-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .contact-item:last-child {
+            border-bottom: none;
+        }
+
+        .risk-indicator {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .risk-extreme {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .risk-high {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .risk-medium {
+            background: #fef3c7;
+            color: #f59e0b;
+        }
+
+        .risk-low {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .flood-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        .flood-stat-card {
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        @media (max-width: 1200px) {
+            .dashboard-container {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .flood-map-container {
+                grid-column: 1 / -1;
+                grid-row: auto;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .header {
+                padding: 1rem;
+            }
+            
+            .header h1 {
+                font-size: 1.5rem;
+            }
+        }
+
+        .notification-popup {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background: white;
+            border-radius: 10px;
+            padding: 1rem 1.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            z-index: 1001;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .notification-popup.show {
+            transform: translateX(0);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .success-message {
+            background: #d1fae5;
+            border: 2px solid #10b981;
+            color: #047857;
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <h1><i class="fas fa-shield-alt"></i> AI-Powered Dam Failure Early Warning System</h1>
+        <p>Mullaperiyar Dam Monitoring & Emergency Response Center</p>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div class="dashboard-container">
+        <!-- Alert Banner -->
+        <div id="alertBanner" class="alert-banner">
+            <h2><i class="fas fa-exclamation-triangle"></i> CRITICAL DAM ALERT</h2>
+            <p id="alertMessage">CRACK DETECTED IN DAM STRUCTURE</p>
+            <p>⚠️ Potential structural failure detected - Check evacuation guidance below</p>
+        </div>
+
+        <!-- System Status -->
+        <div class="card">
+            <h2><i class="fas fa-tachometer-alt"></i> System Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <div class="status-number" id="alertCount">0</div>
+                    <div class="status-label">Active Alerts</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-number" id="usersOnline">0</div>
+                    <div class="status-label">Users Online</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-number" id="sosCount">0</div>
+                    <div class="status-label">SOS Alerts</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-number" id="missingCount">0</div>
+                    <div class="status-label">Missing Persons</div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                <p><strong>System Status:</strong> <span style="color: #059669;">🟢 OPERATIONAL</span></p>
+                <p><strong>Last Update:</strong> <span id="lastUpdate">Connecting...</span></p>
+            </div>
+        </div>
+
+        <!-- Location & Safety with Simulator -->
+        <div class="card">
+            <h2><i class="fas fa-map-marker-alt"></i> Your Location & Safety</h2>
+            <button class="location-btn" onclick="checkUserLocation()">
+                <i class="fas fa-crosshairs"></i> Check My Real Location
+            </button>
+            
+            <button class="location-btn simulator-btn" onclick="toggleLocationSimulator()">
+                <i class="fas fa-mouse-pointer"></i> 🎯 Location Simulator
+            </button>
+
+            <!-- Location Simulator Panel -->
+            <div id="locationSimulator" class="simulator-mode">
+                <h3><i class="fas fa-crosshairs"></i> Location Simulator</h3>
+                <p style="font-size: 0.9rem; color: #6b7280; margin-bottom: 1rem;">
+                    Click on any area on the map to simulate how users in that zone would experience the app
+                </p>
+                <div class="simulator-controls">
+                    <button style="background: #dc2626; color: white;" onclick="simulateArea('Vandiperiyar', 9.5167, 77.1667)">
+                        Vandiperiyar (HIGH RISK)
+                    </button>
+                    <button style="background: #f59e0b; color: white;" onclick="simulateArea('Vallakadavu', 9.5000, 77.2000)">
+                        Vallakadavu (HIGH RISK)
+                    </button>
+                </div>
+                <div class="simulator-controls">
+                    <button style="background: #059669; color: white;" onclick="simulateArea('Kumily', 9.5947, 77.1636)">
+                        Kumily (SAFE ZONE)
+                    </button>
+                    <button style="background: #6b7280; color: white;" onclick="exitSimulator()">
+                        Exit Simulator
+                    </button>
+                </div>
+                <p style="font-size: 0.8rem; font-style: italic; color: #6b7280;">
+                    💡 Or click directly on the map to simulate any location
+                </p>
+            </div>
+
+            <div id="userLocationResult"></div>
+            
+            <!-- Emergency Contacts -->
+            <div class="emergency-contacts" style="margin-top: 1rem;">
+                <h3><i class="fas fa-phone"></i> Emergency Contacts</h3>
+                <div class="contact-item">
+                    <span><strong>Emergency Services</strong></span>
+                    <span style="color: #dc2626; font-weight: bold;">112</span>
+                </div>
+                <div class="contact-item">
+                    <span><strong>Ambulance</strong></span>
+                    <span style="color: #dc2626; font-weight: bold;">108</span>
+                </div>
+                <div class="contact-item">
+                    <span><strong>Disaster Helpline</strong></span>
+                    <span style="color: #dc2626; font-weight: bold;">1077</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Emergency Actions -->
+        <div class="card">
+            <h2><i class="fas fa-life-ring"></i> Emergency Response</h2>
+            
+            <button class="sos-button" onclick="sendSOSAlert()">
+                <i class="fas fa-exclamation-triangle"></i> 🆘 SEND SOS ALERT
+            </button>
+            
+            <button class="sos-button missing-person-btn" onclick="toggleMissingPersonForm()">
+                <i class="fas fa-users"></i> 👥 Report Missing Person
+            </button>
+
+            <!-- Success Message -->
+            <div id="successMessage" class="success-message">
+                <p id="successText"></p>
+            </div>
+
+            <!-- Missing Person Form -->
+            <div id="missingPersonForm" class="missing-person-form">
+                <h3><i class="fas fa-user-plus"></i> Report Missing Person</h3>
+                <div class="form-group">
+                    <label>Full Name *</label>
+                    <input type="text" id="missingName" placeholder="Enter full name" required>
+                </div>
+                <div class="form-group">
+                    <label>Age *</label>
+                    <input type="number" id="missingAge" placeholder="Enter age" min="1" max="120" required>
+                </div>
+                <div class="form-group">
+                    <label>Last Seen Location *</label>
+                    <input type="text" id="lastSeenLocation" placeholder="Enter location where last seen" required>
+                </div>
+                <div class="form-group">
+                    <label>Physical Description</label>
+                    <textarea id="missingDescription" rows="3" placeholder="Height, clothing, distinctive features"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Your Contact Number</label>
+                    <input type="tel" id="reporterContact" placeholder="Your phone number (optional)">
+                </div>
+                <button class="submit-btn" onclick="submitMissingPersonReport()">
+                    <i class="fas fa-paper-plane"></i> Submit Report
+                </button>
+            </div>
+        </div>
+
+        <!-- Recent Alerts -->
+        <div class="card">
+            <h2><i class="fas fa-bell"></i> Recent Alerts</h2>
+            <div id="alertsList">
+                <p style="text-align: center; color: #6b7280; padding: 2rem;">
+                    <i class="loading"></i> Loading alerts...
+                </p>
+            </div>
+        </div>
+
+        <!-- Flood Risk Map -->
+        <div class="card flood-map-container">
+            <h2><i class="fas fa-map"></i> Flood Risk Zones & Evacuation Map</h2>
+            <div id="floodMap"></div>
+        </div>
+
+        <!-- Enhanced Flood Simulation Data -->
+        <div class="card">
+            <h2><i class="fas fa-water"></i> Advanced Flood Impact Analysis</h2>
+            
+            <!-- Control Panel -->
+            <div style="margin-bottom: 1rem; padding: 1rem; background: #f0f9ff; border-radius: 10px;">
+                <h3><i class="fas fa-cog"></i> Simulation Controls</h3>
+                <div style="display: flex; gap: 1rem; margin: 1rem 0; flex-wrap: wrap;">
+                    <button class="action-btn" onclick="triggerFloodSimulation(0.6, 'low_impact')" 
+                            style="background: linear-gradient(45deg, #059669, #10b981); flex: 1;">
+                        <i class="fas fa-play"></i> Low Impact (60%)
+                    </button>
+                    <button class="action-btn" onclick="triggerFloodSimulation(0.8, 'high_impact')" 
+                            style="background: linear-gradient(45deg, #f59e0b, #d97706); flex: 1;">
+                        <i class="fas fa-exclamation-triangle"></i> High Impact (80%)
+                    </button>
+                    <button class="action-btn" onclick="triggerFloodSimulation(0.95, 'catastrophic')" 
+                            style="background: linear-gradient(45deg, #dc2626, #b91c1c); flex: 1;">
+                        <i class="fas fa-skull-crossbones"></i> Catastrophic (95%)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Analysis Display -->
+            <div id="floodAnalysisContainer">
+                <div id="floodAnalysisBasic">
+                    <p style="text-align: center; color: #6b7280; padding: 2rem;">
+                        <i class="fas fa-chart-bar"></i> No flood simulation data available<br>
+                        <small>Click on simulation buttons above to generate analysis</small>
+                    </p>
+                </div>
+                
+                <!-- Detailed Analysis (Hidden initially) -->
+                <div id="floodAnalysisDetailed" style="display: none;">
+                    <!-- Summary Cards -->
+                    <div class="flood-summary-grid">
+                        <div class="flood-stat-card" style="background: #fee2e2;">
+                            <div class="stat-number" id="totalPopulation" style="color: #dc2626;">0</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Total Population</div>
+                        </div>
+                        <div class="flood-stat-card" style="background: #fef3c7;">
+                            <div class="stat-number" id="affectedPopulation" style="color: #f59e0b;">0</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Affected Population</div>
+                        </div>
+                        <div class="flood-stat-card" style="background: #dbeafe;">
+                            <div class="stat-number" id="economicImpact" style="color: #3b82f6;">₹0L</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Economic Impact</div>
+                        </div>
+                        <div class="flood-stat-card" style="background: #ecfdf5;">
+                            <div class="stat-number" id="evacuationZones" style="color: #059669;">0</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Evacuation Zones</div>
+                        </div>
+                    </div>
+
+                    <!-- Detailed Area Analysis -->
+                    <div id="areaAnalysis" style="margin: 1rem 0;"></div>
+
+                    <!-- Charts Section -->
+                    <div id="floodCharts" style="margin: 1rem 0;">
+                        <h4><i class="fas fa-chart-line"></i> Impact Visualizations</h4>
+                        <div id="chartContainer" style="text-align: center; margin: 1rem 0;"></div>
+                    </div>
+
+                    <!-- Recommendations -->
+                    <div id="recommendations" style="background: #f0fdf4; border: 2px solid #22c55e; padding: 1rem; border-radius: 10px; margin: 1rem 0;">
+                        <h4 style="color: #059669;"><i class="fas fa-lightbulb"></i> Emergency Recommendations</h4>
+                        <ul id="recommendationsList" style="margin: 0.5rem 0; padding-left: 1.5rem;"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Refresh Button -->
+            <button class="action-btn" onclick="refreshFloodAnalysis()" style="width: 100%; margin-top: 1rem;">
+                <i class="fas fa-sync-alt"></i> Refresh Analysis
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification Popup -->
+    <div id="notificationPopup" class="notification-popup">
+        <div id="notificationContent"></div>
+    </div>
+
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+        
+        // Global variables
+        let floodMap;
+        let userMarker;
+        let damMarker;
+        let currentFloodData = null;
+        let simulatorMode = false;
+        
+        // Initialize map
+        function initializeMap() {
+            floodMap = L.map('floodMap').setView([9.5419, 77.1539], 11);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(floodMap);
+            
+            // Add dam marker
+            damMarker = L.marker([9.5419, 77.1539], {
+                icon: L.divIcon({
+                    html: '<i class="fas fa-industry" style="color: red; font-size: 20px;"></i>',
+                    iconSize: [30, 30],
+                    className: 'custom-div-icon'
+                })
+            }).addTo(floodMap).bindPopup('<b>Mullaperiyar Dam</b><br>Status: AI Monitoring Active');
+            
+            // Add map click handler for simulator
+            floodMap.on('click', function(e) {
+                if (simulatorMode) {
+                    const lat = e.latlng.lat;
+                    const lng = e.latlng.lng;
+                    simulateArea('Selected Location', lat, lng);
+                }
+            });
+            
+            // Add initial risk zones
+            addDefaultRiskZones();
+        }
+        
+        function addDefaultRiskZones() {
+            const riskZones = [
+                { pos: [9.5167, 77.1667], name: 'Vandiperiyar', risk: 'HIGH', color: '#dc2626', radius: 5000 },
+                { pos: [9.5000, 77.2000], name: 'Vallakadavu', risk: 'HIGH', color: '#f59e0b', radius: 4000 },
+                { pos: [9.5947, 77.1636], name: 'Kumily', risk: 'MEDIUM', color: '#059669', radius: 3000 },
+                { pos: [9.5892, 77.1603], name: 'Thekkady', risk: 'LOW', color: '#3b82f6', radius: 2000 }
+            ];
+            
+            riskZones.forEach(zone => {
+                L.circle(zone.pos, {
+                    color: zone.color,
+                    fillColor: zone.color,
+                    fillOpacity: 0.2,
+                    radius: zone.radius
+                }).addTo(floodMap).bindPopup(`<b>${zone.name}</b><br>Risk Level: ${zone.risk}`);
+            });
+        }
+
+        // Location Simulator Functions
+        function toggleLocationSimulator() {
+            const simulator = document.getElementById('locationSimulator');
+            simulatorMode = !simulatorMode;
+            
+            if (simulatorMode) {
+                simulator.style.display = 'block';
+                showNotificationPopup('🎯 Location Simulator activated! Click on map areas or use preset buttons.');
+                floodMap.getContainer().style.cursor = 'crosshair';
+            } else {
+                simulator.style.display = 'none';
+                floodMap.getContainer().style.cursor = '';
+            }
+        }
+
+        function simulateArea(areaName, lat, lng) {
+            console.log(`Simulating location: ${areaName} (${lat}, ${lng})`);
+
+            const btn = event.target;
+            const originalText = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.innerHTML = '<i class="loading"></i> Simulating...';
+                btn.disabled = true;
+            }
+
+            fetch('/api/simulate-location', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    latitude: lat,
+                    longitude: lng,
+                    area_name: areaName
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    displayLocationResult(data);
+                    updateMapWithUserLocation(lat, lng, data.location.risk_level, true);
+                    showNotificationPopup(`🎯 Simulating experience for users in ${areaName}`);
+                } else {
+                    alert('Simulation failed: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Simulation error:', error);
+                alert('Simulation error occurred');
+            })
+            .finally(() => {
+                if (btn) {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            });
+        }
+
+        function exitSimulator() {
+            simulatorMode = false;
+            document.getElementById('locationSimulator').style.display = 'none';
+            floodMap.getContainer().style.cursor = '';
+            
+            if (userMarker) {
+                floodMap.removeLayer(userMarker);
+                userMarker = null;
+            }
+            
+            document.getElementById('userLocationResult').innerHTML = '';
+            showNotificationPopup('🎯 Location simulator deactivated');
+        }
+
+        // Enhanced Flood Simulation Functions
+        function triggerFloodSimulation(confidence, scenario) {
+            console.log(`Triggering flood simulation: ${scenario} (${confidence})`);
+            
+            // Update button states
+            const buttons = document.querySelectorAll('.action-btn');
+            buttons.forEach(btn => {
+                btn.disabled = true;
+                if (btn.onclick && btn.onclick.toString().includes(scenario)) {
+                    btn.innerHTML = '<i class="loading"></i> Simulating...';
+                }
+            });
+            
+            fetch('/api/trigger-flood-simulation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    confidence: confidence, 
+                    scenario: scenario 
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    console.log('Flood simulation triggered successfully');
+                    showNotificationPopup(`🌊 ${scenario.replace('_', ' ').toUpperCase()} flood simulation activated`);
+                    
+                    // Load detailed analysis after short delay
+                    setTimeout(() => {
+                        loadDetailedFloodAnalysis();
+                    }, 1000);
+                } else {
+                    alert('Failed to trigger simulation: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Simulation error:', error);
+                alert('Failed to trigger simulation');
+            })
+            .finally(() => {
+                // Reset button states
+                buttons.forEach(btn => {
+                    btn.disabled = false;
+                });
+                // Reset button text based on scenario
+                resetSimulationButtons();
+            });
+        }
+
+        function resetSimulationButtons() {
+            const buttonConfigs = [
+                { selector: 'button[onclick*="low_impact"]', text: '<i class="fas fa-play"></i> Low Impact (60%)' },
+                { selector: 'button[onclick*="high_impact"]', text: '<i class="fas fa-exclamation-triangle"></i> High Impact (80%)' },
+                { selector: 'button[onclick*="catastrophic"]', text: '<i class="fas fa-skull-crossbones"></i> Catastrophic (95%)' }
+            ];
+            
+            buttonConfigs.forEach(config => {
+                const button = document.querySelector(config.selector);
+                if (button) button.innerHTML = config.text;
+            });
+        }
+
+        function loadDetailedFloodAnalysis() {
+            console.log('Loading detailed flood analysis...');
+            
+            fetch('/api/flood-analysis-detailed')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    displayDetailedAnalysis(data.analysis, data.charts);
+                } else {
+                    console.error('Failed to load detailed analysis:', data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading detailed analysis:', error);
+            });
+        }
+
+        function displayDetailedAnalysis(analysis, charts) {
+            console.log('Displaying detailed analysis:', analysis);
+            
+            // Hide basic analysis and show detailed
+            document.getElementById('floodAnalysisBasic').style.display = 'none';
+            document.getElementById('floodAnalysisDetailed').style.display = 'block';
+            
+            // Update summary statistics
+            if (analysis.summary) {
+                document.getElementById('totalPopulation').textContent = analysis.summary.total_population.toLocaleString();
+                document.getElementById('affectedPopulation').textContent = analysis.summary.affected_population.toLocaleString();
+                document.getElementById('economicImpact').textContent = `₹${analysis.summary.total_economic_impact_lakhs}L`;
+                document.getElementById('evacuationZones').textContent = analysis.summary.evacuation_zones_count;
+            }
+            
+            // Display area analysis
+            displayAreaAnalysis(analysis.area_details);
+            
+            // Display charts
+            displayFloodCharts(charts);
+            
+            // Display recommendations
+            displayRecommendations(analysis.recommendations);
+            
+            // Update basic flood analysis as fallback
+            updateFloodAnalysis(currentFloodData);
+        }
+
+        function displayAreaAnalysis(areaDetails) {
+            const container = document.getElementById('areaAnalysis');
+            if (!areaDetails) return;
+            
+            let html = '<h4><i class="fas fa-map-marked-alt"></i> Area-wise Impact Analysis</h4>';
+            
+            Object.entries(areaDetails).forEach(([area, details]) => {
+                const riskColor = {
+                    'EXTREME': '#dc2626', 'HIGH': '#f59e0b', 'MEDIUM': '#3b82f6', 'LOW': '#059669'
+                }[details.risk_level] || '#6b7280';
+                
+                html += `
+                    <div style="border: 2px solid ${riskColor}; border-radius: 10px; padding: 1rem; margin: 0.5rem 0; background: rgba(255,255,255,0.8);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <h5 style="color: ${riskColor}; margin: 0;">${area}</h5>
+                            <span class="risk-indicator risk-${details.risk_level.toLowerCase()}">${details.risk_level}</span>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; font-size: 0.9rem;">
+                            <div><strong>Population:</strong> ${details.population.toLocaleString()}</div>
+                            <div><strong>Affected:</strong> ${details.affected_population.toLocaleString()}</div>
+                            <div><strong>Flood Risk:</strong> ${details.flood_probability.toFixed(1)}%</div>
+                            <div><strong>Water Depth:</strong> ${details.water_depth.toFixed(2)}m</div>
+                            <div><strong>Evacuation:</strong> ${details.evacuation_time} min</div>
+                            <div><strong>Impact:</strong> ₹${details.economic_impact_lakhs}L</div>
+                        </div>
+                        
+                        ${displayInfrastructureImpact(details.infrastructure)}
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function displayInfrastructureImpact(infrastructure) {
+            if (!infrastructure) return '';
+            
+            let html = '<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb;"><strong>Infrastructure Impact:</strong><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 0.3rem; margin-top: 0.3rem; font-size: 0.8rem;">';
+            
+            Object.entries(infrastructure).forEach(([type, data]) => {
+                const impact_color = {
+                    'SEVERE': '#dc2626', 'MODERATE': '#f59e0b', 'LOW': '#059669'
+                }[data.impact_level] || '#6b7280';
+                
+                html += `
+                    <div style="text-align: center; padding: 0.2rem; border-radius: 4px; background: rgba(0,0,0,0.05);">
+                        <div style="font-weight: bold; color: ${impact_color};">${type.replace('_', ' ')}</div>
+                        <div>${data.affected}/${data.total}</div>
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+            return html;
+        }
+
+        function displayFloodCharts(charts) {
+            const container = document.getElementById('chartContainer');
+            if (!charts) return;
+            
+            let html = '';
+            
+            if (charts.risk_analysis) {
+                html += `
+                    <div style="margin: 1rem 0;">
+                        <h5>Risk Analysis & Flood Probability</h5>
+                        <img src="data:image/png;base64,${charts.risk_analysis}" 
+                             style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" 
+                             alt="Risk Analysis Chart">
+                    </div>
+                `;
+            }
+            
+            if (charts.timeline_prediction) {
+                html += `
+                    <div style="margin: 1rem 0;">
+                        <h5>24-Hour Risk Timeline Prediction</h5>
+                        <img src="data:image/png;base64,${charts.timeline_prediction}" 
+                             style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" 
+                             alt="Timeline Prediction Chart">
+                    </div>
+                `;
+            }
+            
+            if (charts.error) {
+                html += `<p style="color: #dc2626; text-align: center; padding: 1rem;">⚠️ ${charts.error}</p>`;
+            }
+            
+            container.innerHTML = html;
+        }
+
+        function displayRecommendations(recommendations) {
+            const container = document.getElementById('recommendationsList');
+            if (!recommendations || recommendations.length === 0) return;
+            
+            let html = '';
+            recommendations.forEach(rec => {
+                html += `<li style="margin: 0.5rem 0;">${rec}</li>`;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function refreshFloodAnalysis() {
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="loading"></i> Refreshing...';
+            btn.disabled = true;
+            
+            loadDetailedFloodAnalysis();
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                showNotificationPopup('🔄 Flood analysis refreshed');
+            }, 2000);
+        }
+        
+        // Socket event handlers
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            updateSystemStatus();
+        });
+        
+        socket.on('crack_alert', function(alert) {
+            console.log('Crack alert received:', alert);
+            showAlertBanner(alert);
+            addAlertToList(alert);
+            updateAlertCount();
+            showNotificationPopup(`🚨 Crack detected! Confidence: ${(alert.confidence * 100).toFixed(1)}%`);
+        });
+        
+        socket.on('flood_update', function(floodData) {
+            console.log('Flood update received:', floodData);
+            currentFloodData = floodData;
+            updateFloodAnalysis(floodData);
+            updateMapWithFloodData(floodData);
+            
+            // Auto-load detailed analysis if simulation is triggered
+            if (floodData.manual_trigger) {
+                setTimeout(() => {
+                    loadDetailedFloodAnalysis();
+                }, 500);
+            }
+        });
+        
+        socket.on('sos_alert', function(sosAlert) {
+            console.log('SOS alert received:', sosAlert);
+            showNotificationPopup(`🆘 SOS Alert: Emergency assistance requested`);
+            updateSOSCount();
+        });
+        
+        socket.on('missing_person_report', function(report) {
+            console.log('Missing person report received:', report);
+            showNotificationPopup(`👥 Missing Person: ${report.name} reported missing`);
+            updateMissingCount();
+        });
+        
+        socket.on('recent_alerts', function(data) {
+            console.log('Recent alerts received:', data);
+            if (data.crack_alerts) {
+                displayRecentAlerts(data.crack_alerts);
+            }
+            if (data.system_stats) {
+                updateSystemStats(data.system_stats);
+            }
+            if (data.sos_count !== undefined) {
+                document.getElementById('sosCount').textContent = data.sos_count;
+            }
+            if (data.missing_count !== undefined) {
+                document.getElementById('missingCount').textContent = data.missing_count;
+            }
+        });
+        
+        // UI Functions
+        function showAlertBanner(alert) {
+            const banner = document.getElementById('alertBanner');
+            const message = document.getElementById('alertMessage');
+            
+            message.textContent = `${alert.message} (Confidence: ${(alert.confidence * 100).toFixed(1)}%)`;
+            banner.style.display = 'block';
+            
+            // Auto-hide after 15 seconds
+            setTimeout(() => {
+                banner.style.display = 'none';
+            }, 15000);
+        }
+        
+        function addAlertToList(alert) {
+            const alertsList = document.getElementById('alertsList');
+            const alertItem = document.createElement('div');
+            alertItem.className = 'alert-item';
+            
+            const alertTime = new Date(alert.timestamp).toLocaleString();
+            alertItem.innerHTML = `
+                <strong>${alert.message}</strong><br>
+                <span style="color: #059669;">Confidence: ${(alert.confidence * 100).toFixed(1)}%</span><br>
+                <span class="alert-time">${alertTime}</span>
+            `;
+            
+            alertsList.insertBefore(alertItem, alertsList.firstChild);
+            
+            // Keep only last 5 alerts visible
+            const alertItems = alertsList.querySelectorAll('.alert-item');
+            if (alertItems.length > 5) {
+                alertsList.removeChild(alertItems[alertItems.length - 1]);
+            }
+        }
+        
+        function displayRecentAlerts(alerts) {
+            const alertsList = document.getElementById('alertsList');
+            alertsList.innerHTML = '';
+            
+            if (alerts.length === 0) {
+                alertsList.innerHTML = '<p style="text-align: center; color: #6b7280; padding: 2rem;">No recent alerts</p>';
+                return;
+            }
+            
+            alerts.forEach(alert => {
+                addAlertToList(alert);
+            });
+        }
+        
+        function updateFloodAnalysis(floodData) {
+            const analysisDiv = document.getElementById('floodAnalysisBasic');
+            
+            if (!floodData || !floodData.affected_areas) {
+                return;
+            }
+            
+            let html = `
+                <div style="margin-bottom: 1rem;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                        <div style="text-align: center; padding: 1rem; background: #fee2e2; border-radius: 8px;">
+                            <div style="font-size: 1.2rem; font-weight: bold; color: #dc2626;">${floodData.total_risk_score.toFixed(1)}%</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Risk Score</div>
+                        </div>
+                        <div style="text-align: center; padding: 1rem; background: #dbeafe; border-radius: 8px;">
+                            <div style="font-size: 1.2rem; font-weight: bold; color: #3b82f6;">${new Date(floodData.simulation_time).toLocaleTimeString()}</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Last Update</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            Object.entries(floodData.affected_areas).forEach(([area, data]) => {
+                const riskClass = `risk-${data.risk_level.toLowerCase()}`;
+                html += `
+                    <div style="margin: 0.5rem 0; padding: 0.75rem; border-left: 4px solid var(--risk-color); background: rgba(0,0,0,0.05); border-radius: 5px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <strong>${area}</strong>
+                            <span class="risk-indicator ${riskClass}">${data.risk_level}</span>
+                        </div>
+                        <small>
+                            Flood Probability: ${data.flood_probability.toFixed(1)}% | 
+                            Population: ${data.population ? data.population.toLocaleString() : 'N/A'} |
+                            Evacuation: ${data.evacuation_time} min
+                        </small>
+                    </div>
+                `;
+            });
+            
+            analysisDiv.innerHTML = html;
+        }
+        
+        function checkUserLocation() {
+            if (!navigator.geolocation) {
+                alert('Geolocation is not supported by this browser.');
+                return;
+            }
+            
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="loading"></i> Getting location...';
+            btn.disabled = true;
+            
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    // Send location to server
+                    fetch('/api/user-location', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ latitude: lat, longitude: lng, is_simulation: false })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        displayLocationResult(data);
+                        updateMapWithUserLocation(lat, lng, data.location.risk_level, false);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error getting evacuation information');
+                    })
+                    .finally(() => {
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    });
+                },
+                function(error) {
+                    alert('Error getting location: ' + error.message);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            );
+        }
+        
+        function displayLocationResult(data) {
+            const resultDiv = document.getElementById('userLocationResult');
+            const evacuation = data.evacuation_info;
+            const riskLevel = data.location.risk_level;
+            const isSimulation = data.location.is_simulation;
+            
+            let riskColor = '#059669';
+            if (riskLevel === 'EXTREME') riskColor = '#dc2626';
+            else if (riskLevel === 'HIGH') riskColor = '#d97706';
+            else if (riskLevel === 'MEDIUM') riskColor = '#f59e0b';
+            
+            let simulationNote = '';
+            if (isSimulation) {
+                simulationNote = `<div style="background: #eff6ff; border: 1px solid #3b82f6; padding: 0.5rem; border-radius: 5px; margin-bottom: 0.5rem; font-size: 0.9rem;">
+                    <i class="fas fa-crosshairs"></i> ${evacuation.simulation_note || 'SIMULATION MODE ACTIVE'}
+                </div>`;
+            }
+            
+            resultDiv.innerHTML = `
+                ${simulationNote}
+                <div style="background: rgba(255,255,255,0.8); border: 2px solid ${riskColor}; padding: 1rem; border-radius: 10px; margin-top: 1rem;">
+                    <h4 style="color: ${riskColor}; margin-bottom: 0.5rem;">
+                        <span class="risk-indicator risk-${riskLevel.toLowerCase()}">${riskLevel} RISK</span>
+                    </h4>
+                    <p><strong>${evacuation.message}</strong></p>
+                    <hr style="margin: 0.5rem 0;">
+                    <p><strong>Action:</strong> ${evacuation.action}</p>
+                    <p><strong>Shelter:</strong> ${evacuation.shelter}</p>
+                    <p><strong>Route:</strong> ${evacuation.route}</p>
+                    <p><strong>ETA:</strong> ${evacuation.eta}</p>
+                    ${evacuation.emergency_contacts ? 
+                        `<p><strong>Emergency:</strong> ${evacuation.emergency_contacts.join(', ')}</p>` : 
+                        ''
+                    }
+                </div>
+            `;
+        }
+        
+        function updateMapWithUserLocation(lat, lng, riskLevel, isSimulation) {
+            if (userMarker) {
+                floodMap.removeLayer(userMarker);
+            }
+            
+            let iconHtml = '<i class="fas fa-user" style="color: blue; font-size: 16px;"></i>';
+            if (isSimulation) {
+                iconHtml = '<i class="fas fa-crosshairs" style="color: purple; font-size: 18px;"></i>';
+            }
+            
+            userMarker = L.marker([lat, lng], {
+                icon: L.divIcon({
+                    html: iconHtml,
+                    iconSize: [20, 20],
+                    className: 'custom-div-icon'
+                })
+            }).addTo(floodMap)
+            .bindPopup(`${isSimulation ? 'Simulated' : 'Your'} Location<br>Risk Level: ${riskLevel}`)
+            .openPopup();
+            
+            floodMap.setView([lat, lng], 13);
+        }
+        
+        function sendSOSAlert() {
+            if (!navigator.geolocation) {
+                alert('Cannot send SOS without location access');
+                return;
+            }
+            
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="loading"></i> Sending SOS...';
+            btn.disabled = true;
+            
+            navigator.geolocation.getCurrentPosition(function(position) {
+                const sosData = {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    message: 'Emergency assistance needed - Dam failure evacuation',
+                    contact: 'Web User'
+                };
+                
+                fetch('/api/emergency-sos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(sosData)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('🆘 SOS Alert sent successfully!\n\nHelp is on the way. Stay calm and follow evacuation procedures.');
+                        showNotificationPopup('🆘 Your SOS alert has been sent to emergency services');
+                    } else {
+                        alert('Failed to send SOS. Please try again.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error sending SOS. Please try calling emergency services directly: 112');
+                })
+                .finally(() => {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                });
+            }, function(error) {
+                alert('Cannot get your location for SOS. Error: ' + error.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        }
+        
+        function toggleMissingPersonForm() {
+            const form = document.getElementById('missingPersonForm');
+            const successMessage = document.getElementById('successMessage');
+            
+            // Hide success message when opening form
+            successMessage.style.display = 'none';
+            
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        function submitMissingPersonReport() {
+            // Clear previous success messages
+            document.getElementById('successMessage').style.display = 'none';
+            
+            const reportData = {
+                name: document.getElementById('missingName').value.trim(),
+                age: document.getElementById('missingAge').value,
+                lastSeen: document.getElementById('lastSeenLocation').value.trim(),
+                description: document.getElementById('missingDescription').value.trim(),
+                reporterContact: document.getElementById('reporterContact').value.trim()
+            };
+            
+            // Enhanced validation
+            if (!reportData.name) {
+                alert('❌ Please enter the full name of the missing person');
+                document.getElementById('missingName').focus();
+                return;
+            }
+            
+            if (!reportData.age || reportData.age < 1 || reportData.age > 120) {
+                alert('❌ Please enter a valid age (1-120)');
+                document.getElementById('missingAge').focus();
+                return;
+            }
+            
+            if (!reportData.lastSeen) {
+                alert('❌ Please enter the last seen location');
+                document.getElementById('lastSeenLocation').focus();
+                return;
+            }
+            
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="loading"></i> Submitting Report...';
+            btn.disabled = true;
+            
+            console.log('Submitting missing person report:', reportData);
+            
+            fetch('/api/missing-person', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(reportData)
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                
+                if (data.status === 'success') {
+                    // Show success message
+                    const successDiv = document.getElementById('successMessage');
+                    const successText = document.getElementById('successText');
+                    
+                    successText.innerHTML = `
+                        <strong>✅ Missing Person Report Submitted Successfully!</strong><br>
+                        <strong>Report Number:</strong> ${data.report_number}<br>
+                        <strong>Name:</strong> ${data.details.name}<br>
+                        <strong>Age:</strong> ${data.details.age}<br>
+                        <strong>Total Reports:</strong> ${data.details.total_reports}<br>
+                        <em>Rescue teams have been notified and will begin search operations.</em>
+                    `;
+                    
+                    successDiv.style.display = 'block';
+                    
+                    // Hide form and clear it
+                    document.getElementById('missingPersonForm').style.display = 'none';
+                    document.querySelectorAll('#missingPersonForm input, #missingPersonForm textarea').forEach(field => field.value = '');
+                    
+                    // Show notification
+                    showNotificationPopup(`✅ Missing person report submitted: ${data.details.name}`);
+                    
+                } else {
+                    alert('❌ Failed to submit report: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Network error:', error);
+                alert('❌ Network error occurred. Please check your connection and try again.');
+            })
+            .finally(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        }
+        
+        function showNotificationPopup(message) {
+            const popup = document.getElementById('notificationPopup');
+            const content
+= document.getElementById('notificationContent');
+
+            content.innerHTML = message;
+            popup.classList.add('show');
+
+            setTimeout(() => {
+                popup.classList.remove('show');
+            }, 5000);
+        }
+
+        function updateSystemStatus() {
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleString();
+        }
+
+        function updateSystemStats(stats) {
+            if (stats.users_online !== undefined) {
+                document.getElementById('usersOnline').textContent = stats.users_online;
+            }
+            if (stats.total_alerts !== undefined) {
+                document.getElementById('alertCount').textContent = stats.total_alerts;
+            }
+        }
+
+        function updateAlertCount() {
+            const current = parseInt(document.getElementById('alertCount').textContent);
+            document.getElementById('alertCount').textContent = current + 1;
+        }
+
+        function updateSOSCount() {
+            const current = parseInt(document.getElementById('sosCount').textContent);
+            document.getElementById('sosCount').textContent = current + 1;
+        }
+
+        function updateMissingCount() {
+            const current = parseInt(document.getElementById('missingCount').textContent);
+            document.getElementById('missingCount').textContent = current + 1;
+        }
+
+        function updateMapWithFloodData(floodData) {
+            if (!floodData || !floodData.affected_areas) return;
+
+            // Add flood zones to map
+            Object.entries(floodData.affected_areas).forEach(([area, data]) => {
+                let color = '#059669'; // LOW
+                if (data.risk_level === 'EXTREME') color = '#dc2626';
+                else if (data.risk_level === 'HIGH') color = '#f59e0b';
+                else if (data.risk_level === 'MEDIUM') color = '#3b82f6';
+
+                // Add area circles based on coordinates
+                const areaCoords = getAreaCoordinates(area);
+                if (areaCoords) {
+                    L.circle(areaCoords, {
+                        color: color,
+                        fillColor: color,
+                        fillOpacity: 0.3,
+                        radius: data.water_depth * 1000, // Scale radius by water depth
+                        weight: 3
+                    }).addTo(floodMap)
+                    .bindPopup(`<b>${area}</b><br>Risk: ${data.risk_level}<br>Flood Probability: ${data.flood_probability.toFixed(1)}%<br>Water Depth: ${data.water_depth.toFixed(2)}m`);
+                }
+            });
+        }
+
+        function getAreaCoordinates(areaName) {
+            const coordinates = {
+                'Vandiperiyar': [9.5167, 77.1667],
+                'Vallakadavu': [9.5000, 77.2000],
+                'Kumily': [9.5947, 77.1636],
+                'Thekkady': [9.5892, 77.1603],
+                'Idukki': [9.8500, 76.9750],
+                'Munnar': [10.0889, 77.0595],
+                'Kottayam': [9.5916, 76.5222]
+            };
+            return coordinates[areaName] || null;
+        }
+
+        // Initialize everything when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, initializing dashboard...');
+            initializeMap();
+            updateSystemStatus();
+
+            // Initial data request
+            socket.emit('request_recent_alerts');
+
+            console.log('Dashboard initialized successfully');
+        });
+
+        // Update system status every 30 seconds
+        setInterval(updateSystemStatus, 30000);
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                // Page became visible, refresh data
+                socket.emit('request_recent_alerts');
+                updateSystemStatus();
+            }
+        });
+
+        // Handle window beforeunload
+        window.addEventListener('beforeunload', function() {
+            if (socket && socket.connected) {
+                socket.disconnect();
+            }
+        });
+
+        console.log('Dashboard script loaded successfully');
+    </script>
+</body>
+</html>
